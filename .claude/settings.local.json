@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(wc:*)",
+      "Bash(conda:*)",
+      "Bash(uv --version:*)",
+      "Bash(python3 -m pip install:*)",
+      "Bash(/opt/homebrew/bin/brew:*)",
+      "Bash(/usr/local/bin/brew:*)",
+      "Bash(python3:*)",
+      "Bash(npm:*)",
+      "Bash(docker stop:*)",
+      "Bash(docker rm:*)",
+      "Bash(docker run:*)",
+      "Bash(docker logs:*)",
+      "Bash(pip install:*)",
+      "Bash(source:*)",
+      "Bash(pip3 install:*)"
+    ],
+    "additionalDirectories": [
+      "/Users/mbashir/Rasan/Agnets/AskDB/app/{api/v1,core",
+      "/Users/mbashir/Rasan/Agnets/AskDB/{tests,evals",
+      "/Users/mbashir/Rasan/Agnets/AskDB/frontend/src"
+    ]
+  }
+}
