@@ -65,14 +65,19 @@ def inject_top_clause(sql_query: str, user_query: str) -> str:
         logger.info("Skipping TOP injection for aggregation query without GROUP BY")
         return sql_query
 
-    # Check if user explicitly requested a specific number
-    number_match = re.search(r'\b(\d+)\b', user_query)
-    if number_match:
-        requested_limit = int(number_match.group(1))
-        # Cap at max limit
-        limit = min(requested_limit, settings.max_result_limit)
-    else:
-        limit = settings.default_result_limit
+    # Check if user explicitly requested a specific number of results
+    # Use specific patterns to avoid extracting years or other numbers
+    limit_patterns = [
+        r'(?:show|list|get|give|display|fetch|return)\s+(?:me\s+)?(?:the\s+)?(?:top\s+)?(\d+)',
+        r'(?:top|first|last)\s+(\d+)',
+        r'(\d+)\s+(?:rows|records|results|policies|items|entries)',
+    ]
+    limit = settings.default_result_limit
+    for pattern in limit_patterns:
+        match = re.search(pattern, user_query, re.IGNORECASE)
+        if match:
+            limit = min(int(match.group(1)), settings.max_result_limit)
+            break
 
     # Only inject TOP for SELECT queries
     if re.match(r'^\s*SELECT\s+', sql_query, re.IGNORECASE):
