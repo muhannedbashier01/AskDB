@@ -15,7 +15,11 @@
       "Bash(docker logs:*)",
       "Bash(pip install:*)",
       "Bash(source:*)",
-      "Bash(pip3 install:*)"
+      "Bash(pip3 install:*)",
+      "Bash(lsof:*)",
+      "Bash(xargs kill:*)",
+      "Bash(docker-compose logs:*)",
+      "Bash(docker-compose exec:*)"
     ],
     "additionalDirectories": [
       "/Users/mbashir/Rasan/Agnets/AskDB/app/{api/v1,core",

@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import type { QueryResponse, Message } from '../types';
+import type { Message } from '../types';
 import { submitQuery } from '../services/api';
 
 export function useQuery() {

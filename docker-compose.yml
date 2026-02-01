@@ -1,0 +1,73 @@
+services:
+  # Backend API service
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: askdb-backend
+    ports:
+      - "8000:8000"
+    environment:
+      # LLM Configuration
+      - LLM_BASE_URL=${LLM_BASE_URL:-http://host.docker.internal:1234/v1}
+      - LLM_MODEL=${LLM_MODEL:-local-model}
+      - LLM_TEMPERATURE=${LLM_TEMPERATURE:-0}
+      # Database Configuration
+      - DATABASE_URL=${DATABASE_URL}
+      # Agent Configuration
+      - MAX_RETRY_ATTEMPTS=${MAX_RETRY_ATTEMPTS:-3}
+      - QUERY_TIMEOUT_SECONDS=${QUERY_TIMEOUT_SECONDS:-30}
+      # SQL Query Configuration
+      - DEFAULT_RESULT_LIMIT=${DEFAULT_RESULT_LIMIT:-10}
+      - MAX_RESULT_LIMIT=${MAX_RESULT_LIMIT:-50}
+      # API Configuration
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost,http://localhost:80,http://localhost:5173}
+      # Seq Logging Configuration
+      - SEQ_SERVER_URL=http://seq:5341
+      - SEQ_API_KEY=${SEQ_API_KEY:-}
+    depends_on:
+      - seq
+    networks:
+      - askdb-network
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # Frontend service
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: askdb-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - askdb-network
+    restart: unless-stopped
+
+  # Seq logging service
+  seq:
+    image: datalust/seq:latest
+    container_name: askdb-seq
+    ports:
+      - "5341:5341"  # Ingestion API
+      - "5342:80"    # Web UI
+    environment:
+      - ACCEPT_EULA=Y
+      - SEQ_FIRSTRUN_NOAUTHENTICATION=true
+    volumes:
+      - seq-data:/data
+    networks:
+      - askdb-network
+    restart: unless-stopped
+
+networks:
+  askdb-network:
+    driver: bridge
+
+volumes:
+  seq-data:
