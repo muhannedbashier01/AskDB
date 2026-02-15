@@ -114,6 +114,36 @@ class LLMService:
         raw = self.generate(prompt, system)
         return self._parse_structured_sql(raw)
 
+    def fix_validation_error(
+        self, user_query: str, sql_query: str, error: str, schema: str
+    ) -> dict[str, str]:
+        """Regenerate SQL after a security validation rejection.
+
+        Unlike fix_sql (which handles database execution errors), this method
+        tells the LLM that the query was rejected by the validator and was
+        never executed, prompting it to produce a compliant SELECT statement.
+
+        Args:
+            user_query: Original natural language query.
+            sql_query: The SQL query that was rejected.
+            error: The validation rejection reason.
+            schema: Database schema description.
+
+        Returns:
+            Dict with 'sql' (required) and 'reasoning' (optional) keys.
+        """
+        from app.core.prompts.sql_agent import SYSTEM_PROMPT, VALIDATION_CORRECTION_PROMPT
+
+        system = SYSTEM_PROMPT.format(schema=schema)
+        prompt = VALIDATION_CORRECTION_PROMPT.format(
+            user_query=user_query,
+            sql_query=sql_query,
+            error_message=error,
+        )
+
+        raw = self.generate(prompt, system)
+        return self._parse_structured_sql(raw)
+
     def _parse_structured_sql(self, raw: str) -> dict[str, str]:
         """Parse structured JSON output from the LLM.
 

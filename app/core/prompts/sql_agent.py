@@ -61,6 +61,12 @@ Request: {user_query}
 Query: {sql_query}
 Error: {error_message}"""
 
+VALIDATION_CORRECTION_PROMPT = """Your previous query was REJECTED by the security validator (it was never executed). Regenerate a valid read-only SELECT query. Respond with ONLY a JSON object: {{"sql": "<corrected T-SQL query>", "reasoning": "<what you changed>"}}
+
+Request: {user_query}
+Rejected query: {sql_query}
+Rejection reason: {error_message}"""
+
 RESPONSE_FORMAT_PROMPT = """Summarize these SQL query results in 1-2 concise sentences for a non-technical user. Be specific with numbers and key facts. Do not mention SQL or technical details.
 
 Question: {user_query}

@@ -36,13 +36,22 @@ def generate_sql(state: AgentState) -> dict[str, Any]:
     logger.info("Generating SQL", attempt=attempt, user_query=state["user_query"][:50])
 
     if state["error_message"] and state["sql_query"]:
-        # Retry with error context
-        result = llm.fix_sql(
-            user_query=state["user_query"],
-            sql_query=state["sql_query"],
-            error=state["error_message"],
-            schema=schema,
-        )
+        if state["error_type"] == "validation":
+            # Query was rejected by security validator (never executed)
+            result = llm.fix_validation_error(
+                user_query=state["user_query"],
+                sql_query=state["sql_query"],
+                error=state["error_message"],
+                schema=schema,
+            )
+        else:
+            # Query failed during database execution
+            result = llm.fix_sql(
+                user_query=state["user_query"],
+                sql_query=state["sql_query"],
+                error=state["error_message"],
+                schema=schema,
+            )
     else:
         # Initial generation
         result = llm.generate_sql(
@@ -69,6 +78,7 @@ def generate_sql(state: AgentState) -> dict[str, Any]:
         "reasoning": reasoning,
         "attempt_count": attempt,
         "error_message": "",  # Clear previous error
+        "error_type": "",  # Clear previous error type
     }
 
 
@@ -89,10 +99,13 @@ def validate_sql(state: AgentState) -> dict[str, Any]:
 
     if is_valid:
         logger.info("SQL validation passed", sql_preview=sql[:100])
-        return {"error_message": ""}
+        return {"error_message": "", "error_type": ""}
 
     logger.warning("SQL validation failed", reason=error_reason, sql_preview=sql[:100])
-    return {"error_message": f"SQL validation failed: {error_reason}"}
+    return {
+        "error_message": f"SQL validation failed: {error_reason}",
+        "error_type": "validation",
+    }
 
 
 def route_after_validation(state: AgentState) -> str:
@@ -155,6 +168,7 @@ def execute_sql(state: AgentState) -> dict[str, Any]:
         return {
             "execution_result": result,
             "error_message": "",
+            "error_type": "",
             "sql_query": sql_with_limit,  # Update state with modified SQL
         }
     except SQLExecutionError as e:
@@ -163,6 +177,7 @@ def execute_sql(state: AgentState) -> dict[str, Any]:
         return {
             "execution_result": None,
             "error_message": e.message,
+            "error_type": "execution",
         }
 
 

@@ -16,6 +16,7 @@ class AgentState(TypedDict):
         reasoning: Optional LLM reasoning about the generated SQL.
         execution_result: Query results or None if not yet executed.
         error_message: Error message from the last failed attempt.
+        error_type: Origin of the error — "" (none), "validation", or "execution".
         attempt_count: Number of SQL generation attempts (max 3).
         is_complete: Whether the workflow has completed.
         final_response: Formatted response to return to the user.
@@ -27,6 +28,7 @@ class AgentState(TypedDict):
     reasoning: str
     execution_result: Any
     error_message: str
+    error_type: str
     attempt_count: int
     is_complete: bool
     final_response: dict[str, Any]
@@ -48,6 +50,7 @@ def create_initial_state(user_query: str) -> AgentState:
         reasoning="",
         execution_result=None,
         error_message="",
+        error_type="",
         attempt_count=0,
         is_complete=False,
         final_response={},
