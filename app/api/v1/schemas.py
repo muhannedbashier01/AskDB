@@ -22,6 +22,8 @@ class QueryResponse(BaseModel):
     attempts: int = Field(default=1, description="Number of generation attempts")
     error: Optional[str] = Field(default=None, description="Error message if failed")
     message: Optional[str] = Field(default=None, description="Additional message")
+    trace_id: Optional[str] = Field(default=None, description="Trace ID for log correlation")
+    summary: Optional[str] = Field(default=None, description="Natural language summary of results")
 
 
 class ColumnInfo(BaseModel):

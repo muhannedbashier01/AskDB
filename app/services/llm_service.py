@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import structlog
 from langchain_openai import ChatOpenAI
 
@@ -64,26 +66,32 @@ class LLMService:
         response = self.client.invoke(messages)
         return response.content
 
-    def generate_sql(self, user_query: str, schema: str) -> str:
+    def generate_sql(self, user_query: str, schema: str) -> dict[str, str]:
         """Generate SQL from natural language query.
+
+        Returns structured output with the SQL query and optional reasoning.
+        Falls back to treating the raw response as SQL if JSON parsing fails.
 
         Args:
             user_query: Natural language query.
             schema: Database schema description.
 
         Returns:
-            Generated SQL query.
+            Dict with 'sql' (required) and 'reasoning' (optional) keys.
         """
         from app.core.prompts.sql_agent import SQL_GENERATION_PROMPT, SYSTEM_PROMPT
 
         system = SYSTEM_PROMPT.format(schema=schema)
         prompt = SQL_GENERATION_PROMPT.format(user_query=user_query)
 
-        sql = self.generate(prompt, system)
-        return self._clean_sql(sql)
+        raw = self.generate(prompt, system)
+        return self._parse_structured_sql(raw)
 
-    def fix_sql(self, user_query: str, sql_query: str, error: str, schema: str) -> str:
+    def fix_sql(self, user_query: str, sql_query: str, error: str, schema: str) -> dict[str, str]:
         """Fix a failed SQL query.
+
+        Returns structured output with the corrected SQL and optional reasoning.
+        Falls back to treating the raw response as SQL if JSON parsing fails.
 
         Args:
             user_query: Original natural language query.
@@ -92,7 +100,7 @@ class LLMService:
             schema: Database schema description.
 
         Returns:
-            Corrected SQL query.
+            Dict with 'sql' (required) and 'reasoning' (optional) keys.
         """
         from app.core.prompts.sql_agent import ERROR_CORRECTION_PROMPT, SYSTEM_PROMPT
 
@@ -103,8 +111,53 @@ class LLMService:
             error_message=error,
         )
 
-        sql = self.generate(prompt, system)
-        return self._clean_sql(sql)
+        raw = self.generate(prompt, system)
+        return self._parse_structured_sql(raw)
+
+    def _parse_structured_sql(self, raw: str) -> dict[str, str]:
+        """Parse structured JSON output from the LLM.
+
+        Expected format: {"sql": "<query>", "reasoning": "<explanation>"}
+        Falls back to treating the entire response as raw SQL if parsing fails.
+
+        Args:
+            raw: Raw LLM response text.
+
+        Returns:
+            Dict with 'sql' (required) and 'reasoning' (optional) keys.
+        """
+        cleaned = raw.strip()
+
+        # Try JSON parse first
+        try:
+            parsed = json.loads(cleaned)
+            if isinstance(parsed, dict) and "sql" in parsed:
+                return {
+                    "sql": parsed["sql"].strip(),
+                    "reasoning": parsed.get("reasoning", ""),
+                }
+        except (json.JSONDecodeError, TypeError, AttributeError):
+            pass
+
+        # Try extracting JSON from markdown code blocks (```json ... ```)
+        try:
+            if "```json" in cleaned:
+                json_block = cleaned.split("```json", 1)[1].split("```", 1)[0]
+                parsed = json.loads(json_block.strip())
+                if isinstance(parsed, dict) and "sql" in parsed:
+                    return {
+                        "sql": parsed["sql"].strip(),
+                        "reasoning": parsed.get("reasoning", ""),
+                    }
+        except (json.JSONDecodeError, TypeError, AttributeError, IndexError):
+            pass
+
+        # Fallback: treat entire response as raw SQL
+        logger.warning("Failed to parse structured SQL output, falling back to raw SQL")
+        return {
+            "sql": self._clean_sql(cleaned),
+            "reasoning": "",
+        }
 
     def _clean_sql(self, sql: str) -> str:
         """Clean generated SQL by removing markdown formatting.

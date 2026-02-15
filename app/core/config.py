@@ -57,6 +57,12 @@ class Settings(BaseSettings):
     seq_server_url: str = "http://localhost:5341"
     seq_api_key: str = ""
 
+    # Langfuse Observability Configuration
+    langfuse_enabled: bool = False
+    langfuse_public_key: str = ""
+    langfuse_secret_key: str = ""
+    langfuse_base_url: str = "http://localhost:3000"
+
     @property
     def cors_origins_list(self) -> list[str]:
         """Parse CORS origins from comma-separated string."""
