@@ -18,7 +18,7 @@ from app.core.agent.nodes import (
     route_after_validation,
 )
 from app.core.agent.state import AgentState, create_initial_state
-from app.services.langfuse_service import create_langfuse_handler, flush_langfuse
+from app.services.langfuse_service import langfuse_trace, langfuse_update_trace
 
 logger = structlog.get_logger()
 
@@ -123,18 +123,18 @@ async def run_agent(user_query: str) -> dict[str, Any]:
     logger.info("Starting agent", query=user_query[:50], trace_id=trace_id)
 
     try:
-        # Build invoke config with optional Langfuse callback
-        config: dict[str, Any] = {}
-        langfuse_handler = create_langfuse_handler(trace_id, user_query)
-        if langfuse_handler is not None:
-            config["callbacks"] = [langfuse_handler]
+        # Wrap entire graph execution in a Langfuse trace
+        with langfuse_trace(trace_id, user_query=user_query):
+            final_state = await graph.ainvoke(initial_state)
 
-        # Run the graph
-        final_state = await graph.ainvoke(initial_state, config=config)
-
-        # Flush Langfuse so traces are sent before the request ends
-        if langfuse_handler is not None:
-            flush_langfuse()
+            # Attach final output to the Langfuse trace
+            langfuse_update_trace(
+                output=final_state["final_response"],
+                metadata={
+                    "attempts": final_state["attempt_count"],
+                    "success": final_state["final_response"].get("success", False),
+                },
+            )
 
         logger.info(
             "Agent completed",
@@ -170,18 +170,18 @@ def run_agent_sync(user_query: str) -> dict[str, Any]:
     logger.info("Starting agent (sync)", query=user_query[:50], trace_id=trace_id)
 
     try:
-        # Build invoke config with optional Langfuse callback
-        config: dict[str, Any] = {}
-        langfuse_handler = create_langfuse_handler(trace_id, user_query)
-        if langfuse_handler is not None:
-            config["callbacks"] = [langfuse_handler]
+        # Wrap entire graph execution in a Langfuse trace
+        with langfuse_trace(trace_id, user_query=user_query):
+            final_state = graph.invoke(initial_state)
 
-        # Run the graph synchronously
-        final_state = graph.invoke(initial_state, config=config)
-
-        # Flush Langfuse so traces are sent before the request ends
-        if langfuse_handler is not None:
-            flush_langfuse()
+            # Attach final output to the Langfuse trace
+            langfuse_update_trace(
+                output=final_state["final_response"],
+                metadata={
+                    "attempts": final_state["attempt_count"],
+                    "success": final_state["final_response"].get("success", False),
+                },
+            )
 
         logger.info(
             "Agent completed",

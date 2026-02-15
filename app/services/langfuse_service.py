@@ -1,11 +1,18 @@
 """Langfuse observability service.
 
-Owns all Langfuse concerns: client initialization, callback handler
-creation, and trace flushing.  Every other module imports from here
-rather than touching langfuse directly.
+Uses the Langfuse v3 programmatic API (spans, observations) to trace
+the full agent lifecycle: graph execution, node steps, and LLM calls.
+
+Trace context is propagated via ``contextvars`` so node functions and
+the LLM service can create child spans without passing extra arguments.
 """
 
 from __future__ import annotations
+
+import contextvars
+import time
+from contextlib import contextmanager
+from typing import Any, Generator
 
 import structlog
 
@@ -14,124 +21,205 @@ from app.core.config import get_settings
 logger = structlog.get_logger()
 
 # ---------------------------------------------------------------------------
-# Singleton initialisation
+# Singleton client
 # ---------------------------------------------------------------------------
 
-_langfuse_initialized: bool | None = None
+_langfuse_client = None
+_langfuse_checked: bool = False
 
 
-def _init_langfuse_once() -> bool:
-    """Initialize the Langfuse singleton client (once per process).
+def _get_client():
+    """Return the Langfuse client singleton, or None if disabled/unavailable."""
+    global _langfuse_client, _langfuse_checked
 
-    The v3 Python SDK uses a singleton: we configure it here with our
-    credentials so that ``CallbackHandler()`` picks them up automatically.
+    if _langfuse_checked:
+        return _langfuse_client
 
-    Returns:
-        True if initialised successfully, False otherwise.
-    """
+    _langfuse_checked = True
     settings = get_settings()
+
     if not settings.langfuse_enabled:
-        return False
+        logger.info("Langfuse tracing is disabled")
+        return None
 
     try:
         from langfuse import Langfuse
 
-        Langfuse(
+        _langfuse_client = Langfuse(
             public_key=settings.langfuse_public_key,
             secret_key=settings.langfuse_secret_key,
             base_url=settings.langfuse_base_url,
         )
-        logger.info(
-            "Langfuse client initialized",
-            base_url=settings.langfuse_base_url,
-        )
-        return True
+
+        # Verify connectivity
+        if _langfuse_client.auth_check():
+            logger.info(
+                "Langfuse client initialized",
+                base_url=settings.langfuse_base_url,
+            )
+        else:
+            logger.warning(
+                "Langfuse auth check failed — tracing disabled",
+                base_url=settings.langfuse_base_url,
+            )
+            _langfuse_client = None
+
     except ImportError:
         logger.warning(
-            "Langfuse is enabled but the package is not installed. pip install langfuse"
+            "langfuse package is not installed — tracing disabled. "
+            "pip install langfuse"
         )
-        return False
     except Exception:
         logger.warning("Failed to initialize Langfuse client", exc_info=True)
-        return False
 
-
-def _ensure_langfuse() -> bool:
-    """Lazy-initialise Langfuse. Returns True if ready."""
-    global _langfuse_initialized
-    if _langfuse_initialized is None:
-        _langfuse_initialized = _init_langfuse_once()
-    return _langfuse_initialized
+    return _langfuse_client
 
 
 # ---------------------------------------------------------------------------
-# Public API
+# Context variables — carry the current trace / span across call stack
+# ---------------------------------------------------------------------------
+
+_current_root_span: contextvars.ContextVar = contextvars.ContextVar(
+    "langfuse_root_span", default=None
+)
+_current_span: contextvars.ContextVar = contextvars.ContextVar(
+    "langfuse_current_span", default=None
+)
+
+
+def _parent():
+    """Return the nearest parent (current span or root span)."""
+    return _current_span.get() or _current_root_span.get()
+
+
+# ---------------------------------------------------------------------------
+# Public API — used by graph.py, nodes.py, llm_service.py
 # ---------------------------------------------------------------------------
 
 
-def create_langfuse_handler(trace_id: str, user_query: str):
-    """Create a Langfuse callback handler for LangChain/LangGraph tracing.
+@contextmanager
+def langfuse_trace(
+    trace_id: str,
+    name: str = "askdb-agent",
+    user_query: str = "",
+) -> Generator:
+    """Context manager that wraps an entire agent invocation in a trace.
+
+    Usage in ``graph.py``::
+
+        with langfuse_trace(trace_id, user_query=query) as trace:
+            final_state = await graph.ainvoke(initial_state)
 
     Args:
-        trace_id: Unique trace identifier for cross-referencing with Seq logs.
-        user_query: The user query (used as trace name / metadata).
-
-    Returns:
-        A Langfuse ``CallbackHandler`` instance, or ``None`` if Langfuse is
-        disabled or unavailable.
+        trace_id: Unique identifier for cross-referencing with Seq logs.
+        name: Trace name shown in the Langfuse UI.
+        user_query: The user query (stored as trace input).
     """
-    if not _ensure_langfuse():
-        return None
+    client = _get_client()
+    if client is None:
+        yield None
+        return
 
-    # v3 import path
+    root = client.start_span(
+        name=name,
+        input={"user_query": user_query},
+        metadata={"trace_id": trace_id},
+    )
+    token = _current_root_span.set(root)
     try:
-        from langfuse.langchain import CallbackHandler
+        yield root
+    finally:
+        root.end()
+        _current_root_span.reset(token)
+        try:
+            client.flush()
+        except Exception:
+            logger.debug("Langfuse flush after trace failed (non-fatal)", exc_info=True)
 
-        handler = CallbackHandler(
-            session_id=trace_id,
-            trace_name="askdb-agent",
-            metadata={"trace_id": trace_id, "user_query": user_query[:200]},
-        )
-        logger.debug("Langfuse handler created (v3)", trace_id=trace_id)
-        return handler
-    except ImportError:
-        pass
 
-    # Fallback: v2 import path
+@contextmanager
+def langfuse_span(
+    name: str,
+    *,
+    input: Any = None,
+    metadata: Any = None,
+) -> Generator:
+    """Context manager for a child span (graph node step).
+
+    Usage in ``nodes.py``::
+
+        with langfuse_span("generate_sql", input={"attempt": 1}):
+            ...
+
+    The span is automatically nested under the current parent.
+    """
+    parent = _parent()
+    if parent is None:
+        yield None
+        return
+
+    span = parent.start_span(name=name, input=input, metadata=metadata)
+    token = _current_span.set(span)
     try:
-        from langfuse.callback import CallbackHandler as CallbackHandlerV2
+        yield span
+    finally:
+        span.end()
+        _current_span.reset(token)
 
-        settings = get_settings()
-        handler = CallbackHandlerV2(
-            public_key=settings.langfuse_public_key,
-            secret_key=settings.langfuse_secret_key,
-            host=settings.langfuse_base_url,
-            trace_name="askdb-agent",
-            session_id=trace_id,
-            metadata={"trace_id": trace_id, "user_query": user_query[:200]},
+
+def langfuse_generation(
+    name: str,
+    *,
+    model: str = "",
+    input: Any = None,
+    output: Any = None,
+    usage: dict[str, int] | None = None,
+    metadata: Any = None,
+):
+    """Record an LLM generation observation under the current span.
+
+    Call *after* the LLM call completes so that ``output`` is available.
+
+    Args:
+        name: Observation name (e.g. ``"generate_sql"``).
+        model: Model identifier.
+        input: Prompt / messages sent to the LLM.
+        output: Raw LLM response text.
+        usage: Token usage dict, e.g. ``{"input": 150, "output": 42}``.
+        metadata: Arbitrary metadata dict.
+    """
+    parent = _parent()
+    if parent is None:
+        return
+
+    try:
+        obs = parent.start_observation(
+            name=name,
+            as_type="generation",
+            model=model,
+            input=input,
+            output=output,
+            usage_details=usage,
+            metadata=metadata,
         )
-        logger.debug("Langfuse handler created (v2 fallback)", trace_id=trace_id)
-        return handler
-    except ImportError:
-        logger.warning(
-            "Langfuse is enabled but neither v3 nor v2 CallbackHandler could be "
-            "imported. pip install langfuse"
-        )
-        return None
+        obs.end()
     except Exception:
-        logger.warning("Failed to create Langfuse handler", exc_info=True)
-        return None
+        logger.debug("Failed to record Langfuse generation (non-fatal)", exc_info=True)
 
 
-def flush_langfuse() -> None:
-    """Flush queued Langfuse events so they are sent before the response ends.
+def langfuse_update_trace(*, output: Any = None, metadata: Any = None):
+    """Update the root trace span with final output / metadata."""
+    root = _current_root_span.get()
+    if root is None:
+        return
 
-    Langfuse batches events in the background.  Without an explicit flush the
-    HTTP response can complete before events are delivered.
-    """
     try:
-        from langfuse import get_client
-
-        get_client().flush()
-    except Exception as e:
-        logger.debug("Langfuse flush failed (non-fatal)", error=str(e))
+        kwargs: dict[str, Any] = {}
+        if output is not None:
+            kwargs["output"] = output
+        if metadata is not None:
+            kwargs["metadata"] = metadata
+        if kwargs:
+            root.update(**kwargs)
+    except Exception:
+        logger.debug("Failed to update Langfuse trace (non-fatal)", exc_info=True)

@@ -46,16 +46,19 @@ class LLMService:
             )
         return self._client
 
-    def generate(self, prompt: str, system_prompt: str | None = None) -> str:
+    def generate(self, prompt: str, system_prompt: str | None = None, *, generation_name: str = "llm-generate") -> str:
         """Generate text from the LLM.
 
         Args:
             prompt: The user prompt.
             system_prompt: Optional system prompt.
+            generation_name: Name for the Langfuse generation observation.
 
         Returns:
             Generated text response.
         """
+        from app.services.langfuse_service import langfuse_generation
+
         messages = []
         if system_prompt:
             messages.append(("system", system_prompt))
@@ -64,7 +67,32 @@ class LLMService:
         logger.debug("Generating LLM response", prompt_length=len(prompt))
 
         response = self.client.invoke(messages)
-        return response.content
+        content = response.content
+
+        # Record the LLM call in Langfuse
+        usage = {}
+        if hasattr(response, "usage_metadata") and response.usage_metadata:
+            usage = {
+                "input": response.usage_metadata.get("input_tokens", 0),
+                "output": response.usage_metadata.get("output_tokens", 0),
+            }
+        elif hasattr(response, "response_metadata"):
+            token_usage = response.response_metadata.get("token_usage", {})
+            if token_usage:
+                usage = {
+                    "input": token_usage.get("prompt_tokens", 0),
+                    "output": token_usage.get("completion_tokens", 0),
+                }
+
+        langfuse_generation(
+            name=generation_name,
+            model=self._model,
+            input={"messages": [{"role": m[0], "content": m[1][:500]} for m in messages]},
+            output=content[:1000] if content else "",
+            usage=usage if usage else None,
+        )
+
+        return content
 
     def generate_sql(self, user_query: str, schema: str) -> dict[str, str]:
         """Generate SQL from natural language query.
@@ -84,7 +112,7 @@ class LLMService:
         system = SYSTEM_PROMPT.format(schema=schema)
         prompt = SQL_GENERATION_PROMPT.format(user_query=user_query)
 
-        raw = self.generate(prompt, system)
+        raw = self.generate(prompt, system, generation_name="generate-sql")
         return self._parse_structured_sql(raw)
 
     def fix_sql(self, user_query: str, sql_query: str, error: str, schema: str) -> dict[str, str]:
@@ -111,7 +139,7 @@ class LLMService:
             error_message=error,
         )
 
-        raw = self.generate(prompt, system)
+        raw = self.generate(prompt, system, generation_name="fix-sql")
         return self._parse_structured_sql(raw)
 
     def fix_validation_error(
@@ -141,7 +169,7 @@ class LLMService:
             error_message=error,
         )
 
-        raw = self.generate(prompt, system)
+        raw = self.generate(prompt, system, generation_name="fix-validation-error")
         return self._parse_structured_sql(raw)
 
     def _parse_structured_sql(self, raw: str) -> dict[str, str]:
