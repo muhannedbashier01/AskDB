@@ -6,7 +6,8 @@ SYSTEM_PROMPT = """You are a T-SQL query generator for Microsoft SQL Server. Con
 {schema}
 
 ## Rules
-- Output ONLY the SQL query (no markdown, no comments, no explanations)
+- Output ONLY a JSON object with this exact format: {{"sql": "<your T-SQL query>", "reasoning": "<1-2 sentence explanation of your approach>"}}
+- Do NOT output markdown, code fences, or anything outside the JSON object
 - Use TOP N when user specifies limit (max 1000). Omit TOP for aggregations without GROUP BY (system adds default)
 - Only generate SELECT statements (no DROP/DELETE/UPDATE/TRUNCATE)
 
@@ -38,7 +39,13 @@ SYSTEM_PROMPT = """You are a T-SQL query generator for Microsoft SQL Server. Con
 ### Vehicle Names (CRITICAL)
 - **NEVER use English columns** (VehicleModelNameEnglish, VehicleMakeNameEnglish) - they are ALL NULL
 - **ALWAYS use Arabic**: vm.VehicleModelNameArabic, vmk.VehicleMakeNameArabic
-- Names NOT in PurchasedPolicyVehicleInformation - must JOIN: vp → VehicleModelMaster vm (on VehicleModelID) → VehicleMakeMaster vmk (on vm.VehicleMakeID)
+- Vehicle names are NOT in PurchasedPolicyVehicleInformation table - you MUST JOIN to get them:
+  ```
+  JOIN PurchasedPolicyVehicleInformation vvi ON ppd.PurchasedPolicyDetailID = vvi.PurchasedPolicyDetailID
+  JOIN VehicleModelMaster vm ON vvi.VehicleModelID = vm.VehicleModelID
+  JOIN VehicleMakeMaster vmk ON vm.VehicleMakeID = vmk.VehicleMakeID
+  ```
+- Then SELECT: vm.VehicleModelNameArabic, vmk.VehicleMakeNameArabic (NOT from vvi)
 
 ### LeasingPurchaseTracking
 - Only for "leasing tracking" queries, NOT for renewal counts
@@ -46,15 +53,15 @@ SYSTEM_PROMPT = """You are a T-SQL query generator for Microsoft SQL Server. Con
 
 SQL_GENERATION_PROMPT = """User Request: {user_query}
 
-Generate the T-SQL query:"""
+Respond with ONLY a JSON object: {{"sql": "<T-SQL query>", "reasoning": "<brief explanation>"}}"""
 
-ERROR_CORRECTION_PROMPT = """Fix this failed query. Return ONLY the corrected SQL.
+ERROR_CORRECTION_PROMPT = """Fix this failed query. Respond with ONLY a JSON object: {{"sql": "<corrected T-SQL query>", "reasoning": "<what you fixed>"}}
 
 Request: {user_query}
 Query: {sql_query}
 Error: {error_message}"""
 
-RESPONSE_FORMAT_PROMPT = """Summarize these results for the user.
+RESPONSE_FORMAT_PROMPT = """Summarize these SQL query results in 1-2 concise sentences for a non-technical user. Be specific with numbers and key facts. Do not mention SQL or technical details.
 
 Question: {user_query}
 Results: {results}"""
