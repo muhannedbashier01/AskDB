@@ -1,3 +1,10 @@
+export interface Visualization {
+  title: string;
+  description: string | null;
+  library: string;
+  spec: Record<string, unknown>;
+}
+
 export interface QueryResponse {
   success: boolean;
   sql_query: string;
@@ -8,6 +15,7 @@ export interface QueryResponse {
   error: string | null;
   message: string | null;
   summary?: string | null;
+  visualizations?: Visualization[] | null;
 }
 
 export interface Message {

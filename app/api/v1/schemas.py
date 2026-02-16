@@ -11,6 +11,15 @@ class QueryRequest(BaseModel):
     query: str = Field(..., min_length=1, description="Natural language query")
 
 
+class Visualization(BaseModel):
+    """A single chart visualization with a Vega-Lite spec."""
+
+    title: str = Field(..., description="Chart title")
+    description: Optional[str] = Field(default=None, description="Brief description of the chart insight")
+    library: str = Field(default="vega_lite", description="Visualization library")
+    spec: Dict[str, Any] = Field(..., description="Vega-Lite specification (data.name must be 'table')")
+
+
 class QueryResponse(BaseModel):
     """Response model for query results."""
 
@@ -24,6 +33,7 @@ class QueryResponse(BaseModel):
     message: Optional[str] = Field(default=None, description="Additional message")
     trace_id: Optional[str] = Field(default=None, description="Trace ID for log correlation")
     summary: Optional[str] = Field(default=None, description="Natural language summary of results")
+    visualizations: Optional[List[Visualization]] = Field(default=None, description="Chart visualizations for results")
 
 
 class ColumnInfo(BaseModel):

@@ -71,3 +71,46 @@ RESPONSE_FORMAT_PROMPT = """Summarize these SQL query results in 1-2 concise sen
 
 Question: {user_query}
 Results: {results}"""
+
+VISUALIZATION_PROMPT = """Analyze these SQL query results and generate chart visualizations.
+
+Question: {user_query}
+Columns: {columns}
+Row count: {row_count}
+Sample rows (first {sample_count}):
+{sample_rows}
+
+## Rules
+- Output ONLY a JSON object. No markdown, no code fences.
+- Use Vega-Lite v5 specs.
+- MUST use "data": {{"name": "table"}} — NEVER include data values in the spec.
+- ONLY reference field names from the columns list above.
+- Choose chart type based on data shape:
+  - datetime/date column + numeric measure → line or area
+  - category/text column + numeric measure → bar
+  - two numeric measures → point (scatter)
+  - part-to-whole with ≤6 categories → arc (pie/donut)
+- Return empty list if data is NOT chartable (single aggregate value, all text columns, >2000 rows without aggregation, ≤1 row).
+- Maximum 2 charts.
+- Allowed mark types: bar, line, area, point, arc, rect.
+- For temporal fields use "type": "temporal". For numeric use "quantitative". For text/category use "nominal".
+
+## Output format
+{{
+  "visualizations": [
+    {{
+      "title": "Short descriptive title",
+      "description": "One sentence explaining the insight",
+      "library": "vega_lite",
+      "spec": {{
+        "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+        "data": {{"name": "table"}},
+        "mark": "bar",
+        "encoding": {{
+          "x": {{"field": "ColumnName", "type": "nominal"}},
+          "y": {{"field": "ColumnName", "type": "quantitative"}}
+        }}
+      }}
+    }}
+  ]
+}}"""

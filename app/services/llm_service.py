@@ -296,6 +296,63 @@ class LLMService:
 
         return sql.strip()
 
+    def generate_visualizations(
+        self,
+        user_query: str,
+        columns: list[str],
+        rows: list[dict],
+        row_count: int,
+    ) -> list[dict]:
+        """Generate Vega-Lite chart specs for query results.
+
+        Calls the LLM with a sample of the data and expects a JSON response
+        containing visualization specifications. Returns an empty list on any
+        failure so the main response is never broken.
+        """
+        from app.core.prompts.sql_agent import VISUALIZATION_PROMPT
+
+        try:
+            sample_rows = rows[:30]
+            sample_text = json.dumps(sample_rows, default=str, indent=2)
+
+            prompt = VISUALIZATION_PROMPT.format(
+                user_query=user_query,
+                columns=columns,
+                row_count=row_count,
+                sample_count=len(sample_rows),
+                sample_rows=sample_text,
+            )
+
+            raw = self.generate(prompt, generation_name="generate-visualizations")
+            cleaned = raw.strip()
+
+            # Try direct JSON parse
+            try:
+                parsed = json.loads(cleaned)
+                if isinstance(parsed, dict) and "visualizations" in parsed:
+                    return parsed["visualizations"]
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+            # Try extracting from markdown code block
+            if "```" in cleaned:
+                for marker in ("```json", "```"):
+                    if marker in cleaned:
+                        block = cleaned.split(marker, 1)[1].split("```", 1)[0]
+                        try:
+                            parsed = json.loads(block.strip())
+                            if isinstance(parsed, dict) and "visualizations" in parsed:
+                                return parsed["visualizations"]
+                        except (json.JSONDecodeError, TypeError):
+                            continue
+
+            logger.warning("Failed to parse visualization response")
+            return []
+
+        except Exception:
+            logger.warning("Failed to generate visualizations", exc_info=True)
+            return []
+
 
 # Module-level service instance
 _llm_service: LLMService | None = None

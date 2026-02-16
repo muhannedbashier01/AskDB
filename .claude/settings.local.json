@@ -19,7 +19,8 @@
       "Bash(lsof:*)",
       "Bash(xargs kill:*)",
       "Bash(docker-compose logs:*)",
-      "Bash(docker-compose exec:*)"
+      "Bash(docker-compose exec:*)",
+      "Bash(npx tsc:*)"
     ],
     "additionalDirectories": [
       "/Users/mbashir/Rasan/Agnets/AskDB/app/{api/v1,core",

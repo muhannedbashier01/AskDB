@@ -1,6 +1,7 @@
 import type { Message } from '../types';
 import { SummaryPreview } from './SummaryPreview';
 import { SqlPreview } from './SqlPreview';
+import { ChartPreview } from './ChartPreview';
 import { ResultsTable } from './ResultsTable';
 
 interface MessageBubbleProps {
@@ -32,6 +33,12 @@ export function MessageBubble({ message }: MessageBubbleProps) {
                       sql={message.response.sql_query}
                       attempts={message.response.attempts}
                     />
+                    {message.response.visualizations && message.response.visualizations.length > 0 && (
+                      <ChartPreview
+                        visualizations={message.response.visualizations}
+                        rows={message.response.rows}
+                      />
+                    )}
                     {message.response.columns.length > 0 ? (
                       <ResultsTable
                         columns={message.response.columns}
