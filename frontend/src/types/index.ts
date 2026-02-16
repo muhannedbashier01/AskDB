@@ -7,6 +7,7 @@ export interface QueryResponse {
   attempts: number;
   error: string | null;
   message: string | null;
+  summary?: string | null;
 }
 
 export interface Message {

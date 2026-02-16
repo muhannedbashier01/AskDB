@@ -1,4 +1,5 @@
 import type { Message } from '../types';
+import { SummaryPreview } from './SummaryPreview';
 import { SqlPreview } from './SqlPreview';
 import { ResultsTable } from './ResultsTable';
 
@@ -26,6 +27,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
               <>
                 {message.response.success ? (
                   <>
+                    <SummaryPreview summary={message.response.summary} />
                     <SqlPreview
                       sql={message.response.sql_query}
                       attempts={message.response.attempts}
