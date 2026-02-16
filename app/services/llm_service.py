@@ -1,49 +1,106 @@
-"""LLM service for interacting with LM Studio."""
+"""LLM service for interacting with language models.
+
+Supports multiple providers (OpenAI-compatible, Anthropic, Google) via
+LangChain's BaseChatModel abstraction.
+"""
 
 from __future__ import annotations
 
 import json
 
 import structlog
-from langchain_openai import ChatOpenAI
+from langchain_core.language_models.chat_models import BaseChatModel
 
 from app.core.config import get_settings
 
 logger = structlog.get_logger()
 
 
+def _create_chat_model(
+    provider: str,
+    base_url: str,
+    model: str,
+    temperature: float,
+    api_key: str,
+) -> BaseChatModel:
+    """Factory function that creates the appropriate LangChain chat model.
+
+    Args:
+        provider: Provider name ("openai", "anthropic", "google").
+        base_url: API base URL.
+        model: Model name.
+        temperature: Temperature for generation.
+        api_key: API key.
+
+    Returns:
+        A concrete BaseChatModel instance.
+
+    Raises:
+        ValueError: If the provider is not supported.
+    """
+    if provider == "openai":
+        from langchain_openai import ChatOpenAI
+
+        return ChatOpenAI(
+            base_url=base_url,
+            model=model,
+            temperature=temperature,
+            api_key=api_key or "not-needed",
+        )
+
+    if provider == "anthropic":
+        from langchain_anthropic import ChatAnthropic
+
+        return ChatAnthropic(
+            model_name=model,
+            temperature=temperature,
+            api_key=api_key,
+        )
+
+    if provider == "google":
+        from langchain_google_genai import ChatGoogleGenerativeAI
+
+        return ChatGoogleGenerativeAI(
+            model=model,
+            temperature=temperature,
+            google_api_key=api_key,
+        )
+
+    raise ValueError(
+        f"Unsupported LLM provider: '{provider}'. "
+        f"Supported providers: openai, anthropic, google"
+    )
+
+
 class LLMService:
-    """Service for LLM interactions via LM Studio."""
+    """Service for LLM interactions via any LangChain-supported provider."""
 
     def __init__(
         self,
-        base_url: str | None = None,
+        client: BaseChatModel | None = None,
         model: str | None = None,
-        temperature: float | None = None,
     ):
         """Initialize LLM service.
 
         Args:
-            base_url: LM Studio API URL. If None, uses settings.
-            model: Model name. If None, uses settings.
-            temperature: Temperature for generation. If None, uses settings.
+            client: Pre-built BaseChatModel instance. If None, one is created
+                    from settings using the configured provider.
+            model: Model name override (used for Langfuse logging). If None,
+                   uses settings.
         """
         settings = get_settings()
-        self._base_url = base_url or settings.llm_base_url
         self._model = model or settings.llm_model
-        self._temperature = temperature if temperature is not None else settings.llm_temperature
-        self._client: ChatOpenAI | None = None
+        self._client = client or _create_chat_model(
+            provider=settings.llm_provider,
+            base_url=settings.llm_base_url,
+            model=settings.llm_model,
+            temperature=settings.llm_temperature,
+            api_key=settings.llm_api_key,
+        )
 
     @property
-    def client(self) -> ChatOpenAI:
-        """Get or create LangChain ChatOpenAI client."""
-        if self._client is None:
-            self._client = ChatOpenAI(
-                base_url=self._base_url,
-                model=self._model,
-                temperature=self._temperature,
-                api_key="not-needed",  # LM Studio doesn't require API key
-            )
+    def client(self) -> BaseChatModel:
+        """Get the LangChain chat model client."""
         return self._client
 
     def generate(self, prompt: str, system_prompt: str | None = None, *, generation_name: str = "llm-generate") -> str:

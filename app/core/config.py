@@ -32,10 +32,12 @@ class Settings(BaseSettings):
         case_sensitive=False,
     )
 
-    # LLM Configuration (LM Studio)
+    # LLM Configuration
+    llm_provider: str = "openai"  # "openai" (covers LM Studio, OpenAI, etc.), "anthropic", "google"
     llm_base_url: str = "http://localhost:1234/v1"
     llm_model: str = "local-model"
     llm_temperature: float = 0.0
+    llm_api_key: str = ""
 
     # Database Configuration
     database_url: str = ""
