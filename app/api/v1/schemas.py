@@ -9,6 +9,7 @@ class QueryRequest(BaseModel):
     """Request model for submitting a natural language query."""
 
     query: str = Field(..., min_length=1, description="Natural language query")
+    session_id: Optional[str] = Field(default=None, description="Session ID for conversational memory")
 
 
 class QueryResponse(BaseModel):
@@ -24,6 +25,7 @@ class QueryResponse(BaseModel):
     message: Optional[str] = Field(default=None, description="Additional message")
     trace_id: Optional[str] = Field(default=None, description="Trace ID for log correlation")
     summary: Optional[str] = Field(default=None, description="Natural language summary of results")
+    session_id: Optional[str] = Field(default=None, description="Session ID for conversational memory")
 
 
 class ColumnInfo(BaseModel):

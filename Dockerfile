@@ -39,7 +39,8 @@ RUN pip install --no-cache-dir --upgrade pip \
     "python-dotenv>=1.0.0" \
     "seqlog>=0.3.0" \
     "pymssql>=2.2.0" \
-    "langfuse>=2.0.0"
+    "langfuse>=2.0.0" \
+    "redis>=5.0.0"
 
 # Copy application code
 COPY app/ ./app/

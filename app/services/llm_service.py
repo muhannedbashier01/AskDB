@@ -151,7 +151,9 @@ class LLMService:
 
         return content
 
-    def generate_sql(self, user_query: str, schema: str) -> dict[str, str]:
+    def generate_sql(
+        self, user_query: str, schema: str, conversation_context: str = ""
+    ) -> dict[str, str]:
         """Generate SQL from natural language query.
 
         Returns structured output with the SQL query and optional reasoning.
@@ -160,6 +162,7 @@ class LLMService:
         Args:
             user_query: Natural language query.
             schema: Database schema description.
+            conversation_context: Formatted prior exchanges for follow-up resolution.
 
         Returns:
             Dict with 'sql' (required) and 'reasoning' (optional) keys.
@@ -167,6 +170,8 @@ class LLMService:
         from app.core.prompts.sql_agent import SQL_GENERATION_PROMPT, SYSTEM_PROMPT
 
         system = SYSTEM_PROMPT.format(schema=schema)
+        if conversation_context:
+            system = f"{system}\n\n{conversation_context}"
         prompt = SQL_GENERATION_PROMPT.format(user_query=user_query)
 
         raw = self.generate(prompt, system, generation_name="generate-sql")

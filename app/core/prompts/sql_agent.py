@@ -67,6 +67,15 @@ Request: {user_query}
 Rejected query: {sql_query}
 Rejection reason: {error_message}"""
 
+CONVERSATION_CONTEXT_BLOCK = """## Recent Conversation
+{exchanges}
+
+IMPORTANT rules for follow-up queries:
+- Resolve references like "that", "those", "the same", "filter it", "break it down", etc. using the previous SQL.
+- ALWAYS carry forward WHERE filters (date ranges, cancellation filter, joins) from the previous query unless the user explicitly changes them.
+- "Break that down by X" means: take the previous query's WHERE clause and add GROUP BY X.
+- "Filter that by Y" means: add Y as an additional WHERE condition to the previous query."""
+
 RESPONSE_FORMAT_PROMPT = """Summarize these SQL query results in 1-2 concise sentences for a non-technical user. Be specific with numbers and key facts. Do not mention SQL or technical details.
 
 Question: {user_query}

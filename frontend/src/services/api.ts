@@ -2,13 +2,18 @@ import type { QueryResponse, SchemaResponse, HealthResponse } from '../types';
 
 const API_BASE = '/api/v1';
 
-export async function submitQuery(query: string): Promise<QueryResponse> {
+export async function submitQuery(query: string, sessionId?: string): Promise<QueryResponse> {
+  const body: Record<string, string> = { query };
+  if (sessionId) {
+    body.session_id = sessionId;
+  }
+
   const response = await fetch(`${API_BASE}/query`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ query }),
+    body: JSON.stringify(body),
   });
 
   if (!response.ok) {
@@ -17,6 +22,10 @@ export async function submitQuery(query: string): Promise<QueryResponse> {
   }
 
   return response.json();
+}
+
+export async function clearSession(sessionId: string): Promise<void> {
+  await fetch(`${API_BASE}/session/${sessionId}`, { method: 'DELETE' });
 }
 
 export async function getSchema(): Promise<SchemaResponse> {

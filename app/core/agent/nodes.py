@@ -64,6 +64,7 @@ def generate_sql(state: AgentState) -> dict[str, Any]:
             result = llm.generate_sql(
                 user_query=state["user_query"],
                 schema=schema,
+                conversation_context=state.get("conversation_context", ""),
             )
 
         sql = result["sql"]

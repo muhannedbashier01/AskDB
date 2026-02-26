@@ -8,6 +8,7 @@ export interface QueryResponse {
   error: string | null;
   message: string | null;
   summary?: string | null;
+  session_id?: string | null;
 }
 
 export interface Message {

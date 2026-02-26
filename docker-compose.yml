@@ -32,9 +32,12 @@ services:
       - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
       - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
       - LANGFUSE_BASE_URL=${LANGFUSE_BASE_URL:-http://langfuse:3000}
+      # Redis Configuration (reuses langfuse-redis, DB 1 for isolation)
+      - REDIS_URL=redis://:langfuseredis@langfuse-redis:6379/1
     depends_on:
       - seq
       - langfuse
+      - langfuse-redis
     networks:
       - askdb-network
     restart: unless-stopped

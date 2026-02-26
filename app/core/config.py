@@ -59,6 +59,11 @@ class Settings(BaseSettings):
     seq_server_url: str = "http://localhost:5341"
     seq_api_key: str = ""
 
+    # Conversational Memory Configuration
+    conversation_memory_limit: int = 5  # Max prior exchanges in LLM context
+    session_ttl_minutes: int = 60  # Redis session expiry (minutes)
+    redis_url: str = "redis://:langfuseredis@localhost:6379/1"  # DB 1 to isolate from Langfuse
+
     # Langfuse Observability Configuration
     langfuse_enabled: bool = False
     langfuse_public_key: str = ""

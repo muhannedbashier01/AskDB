@@ -59,10 +59,14 @@ def inject_top_clause(sql_query: str, user_query: str) -> str:
     # Check if there's a GROUP BY clause (these might need limits)
     has_group_by = re.search(r'\bGROUP\s+BY\b', sql_query, re.IGNORECASE)
 
-    if has_aggregate and not has_group_by:
-        # Pure aggregation query (e.g., SELECT COUNT(*), SELECT AVG(price))
-        # These return a single row, no need for TOP
-        logger.info("Skipping TOP injection for aggregation query without GROUP BY")
+    if has_aggregate:
+        # Aggregation queries: skip TOP injection
+        # - Without GROUP BY: returns single row (e.g., SELECT COUNT(*))
+        # - With GROUP BY: truncating groups gives misleading results
+        logger.info(
+            "Skipping TOP injection for aggregation query",
+            has_group_by=bool(has_group_by),
+        )
         return sql_query
 
     # Check if user explicitly requested a specific number of results
@@ -99,10 +103,7 @@ def inject_top_clause(sql_query: str, user_query: str) -> str:
                 flags=re.IGNORECASE
             )
 
-        if has_group_by:
-            logger.info(f"Injected TOP {limit} clause into GROUP BY query (limiting groups)")
-        else:
-            logger.info(f"Injected TOP {limit} clause into SELECT query")
+        logger.info(f"Injected TOP {limit} clause into SELECT query")
 
     return sql_query
 

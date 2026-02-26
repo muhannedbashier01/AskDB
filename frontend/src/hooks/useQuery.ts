@@ -1,11 +1,12 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import type { Message } from '../types';
-import { submitQuery } from '../services/api';
+import { submitQuery, clearSession } from '../services/api';
 
 export function useQuery() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const sessionIdRef = useRef<string>(crypto.randomUUID());
 
   const sendQuery = useCallback(async (query: string) => {
     setIsLoading(true);
@@ -21,7 +22,7 @@ export function useQuery() {
     setMessages((prev) => [...prev, userMessage]);
 
     try {
-      const response = await submitQuery(query);
+      const response = await submitQuery(query, sessionIdRef.current);
 
       // Add assistant message with response
       const assistantMessage: Message = {
@@ -56,6 +57,10 @@ export function useQuery() {
   }, []);
 
   const clearMessages = useCallback(() => {
+    // Clear session on backend
+    clearSession(sessionIdRef.current).catch(() => {});
+    // Generate new session for fresh conversation
+    sessionIdRef.current = crypto.randomUUID();
     setMessages([]);
     setError(null);
   }, []);
