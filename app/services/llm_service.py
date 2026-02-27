@@ -7,11 +7,16 @@ LangChain's BaseChatModel abstraction.
 from __future__ import annotations
 
 import json
+from typing import Any, Callable
 
 import structlog
 from langchain_core.language_models.chat_models import BaseChatModel
 
 from app.core.config import get_settings
+
+# Type alias for the optional generation recording callback.
+# Signature: (name, *, model, prompt_messages, response_text, usage, metadata) -> None
+GenerationRecorder = Callable[..., None]
 
 logger = structlog.get_logger()
 
@@ -79,17 +84,20 @@ class LLMService:
         self,
         client: BaseChatModel | None = None,
         model: str | None = None,
+        generation_recorder: GenerationRecorder | None = None,
     ):
         """Initialize LLM service.
 
         Args:
             client: Pre-built BaseChatModel instance. If None, one is created
                     from settings using the configured provider.
-            model: Model name override (used for Langfuse logging). If None,
-                   uses settings.
+            model: Model name override. If None, uses settings.
+            generation_recorder: Optional callback to record LLM generations
+                    for observability. Injected by the tracing layer.
         """
         settings = get_settings()
         self._model = model or settings.llm_model
+        self._generation_recorder = generation_recorder
         self._client = client or _create_chat_model(
             provider=settings.llm_provider,
             base_url=settings.llm_base_url,
@@ -103,19 +111,16 @@ class LLMService:
         """Get the LangChain chat model client."""
         return self._client
 
-    def generate(self, prompt: str, system_prompt: str | None = None, *, generation_name: str = "llm-generate") -> str:
+    def generate(self, prompt: str, system_prompt: str | None = None) -> str:
         """Generate text from the LLM.
 
         Args:
             prompt: The user prompt.
             system_prompt: Optional system prompt.
-            generation_name: Name for the Langfuse generation observation.
 
         Returns:
             Generated text response.
         """
-        from app.services.langfuse_service import langfuse_generation
-
         messages = []
         if system_prompt:
             messages.append(("system", system_prompt))
@@ -126,30 +131,38 @@ class LLMService:
         response = self.client.invoke(messages)
         content = response.content
 
-        # Record the LLM call in Langfuse
-        usage = {}
+        # Notify the generation recorder (tracing layer) if registered
+        if self._generation_recorder:
+            usage = self._extract_usage(response)
+            self._generation_recorder(
+                model=self._model,
+                prompt_messages=[{"role": m[0], "content": m[1]} for m in messages],
+                response_text=content,
+                usage=usage,
+            )
+
+        return content
+
+    @staticmethod
+    def _extract_usage(response: Any) -> dict[str, int] | None:
+        """Extract token usage from LLM response metadata.
+
+        Handles both OpenAI-style (usage_metadata) and Anthropic-style
+        (response_metadata.token_usage) response formats.
+        """
         if hasattr(response, "usage_metadata") and response.usage_metadata:
-            usage = {
+            return {
                 "input": response.usage_metadata.get("input_tokens", 0),
                 "output": response.usage_metadata.get("output_tokens", 0),
             }
-        elif hasattr(response, "response_metadata"):
+        if hasattr(response, "response_metadata"):
             token_usage = response.response_metadata.get("token_usage", {})
             if token_usage:
-                usage = {
+                return {
                     "input": token_usage.get("prompt_tokens", 0),
                     "output": token_usage.get("completion_tokens", 0),
                 }
-
-        langfuse_generation(
-            name=generation_name,
-            model=self._model,
-            input={"messages": [{"role": m[0], "content": m[1][:500]} for m in messages]},
-            output=content[:1000] if content else "",
-            usage=usage if usage else None,
-        )
-
-        return content
+        return None
 
     def generate_sql(
         self, user_query: str, schema: str, conversation_context: str = ""
@@ -174,7 +187,7 @@ class LLMService:
             system = f"{system}\n\n{conversation_context}"
         prompt = SQL_GENERATION_PROMPT.format(user_query=user_query)
 
-        raw = self.generate(prompt, system, generation_name="generate-sql")
+        raw = self.generate(prompt, system)
         return self._parse_structured_sql(raw)
 
     def fix_sql(self, user_query: str, sql_query: str, error: str, schema: str) -> dict[str, str]:
@@ -201,7 +214,7 @@ class LLMService:
             error_message=error,
         )
 
-        raw = self.generate(prompt, system, generation_name="fix-sql")
+        raw = self.generate(prompt, system)
         return self._parse_structured_sql(raw)
 
     def fix_validation_error(
@@ -231,7 +244,7 @@ class LLMService:
             error_message=error,
         )
 
-        raw = self.generate(prompt, system, generation_name="fix-validation-error")
+        raw = self.generate(prompt, system)
         return self._parse_structured_sql(raw)
 
     def _parse_structured_sql(self, raw: str) -> dict[str, str]:
@@ -307,8 +320,16 @@ _llm_service: LLMService | None = None
 
 
 def get_llm_service() -> LLMService:
-    """Get or create LLM service singleton."""
+    """Get or create LLM service singleton.
+
+    Wires the tracing service's generation recorder so that every LLM
+    call is automatically observed without the LLM service knowing
+    about any specific tracing provider.
+    """
     global _llm_service
     if _llm_service is None:
-        _llm_service = LLMService()
+        from app.services.tracing import get_tracing_service
+
+        tracing = get_tracing_service()
+        _llm_service = LLMService(generation_recorder=tracing.record_generation)
     return _llm_service
