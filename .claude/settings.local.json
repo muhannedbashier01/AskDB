@@ -19,7 +19,13 @@
       "Bash(lsof:*)",
       "Bash(xargs kill:*)",
       "Bash(docker-compose logs:*)",
-      "Bash(docker-compose exec:*)"
+      "Bash(docker-compose exec:*)",
+      "Bash(find:*)",
+      "Bash(docker ps:*)",
+      "Bash(docker exec:*)",
+      "mcp__ide__getDiagnostics",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
     ],
     "additionalDirectories": [
       "/Users/mbashir/Rasan/Agnets/AskDB/app/{api/v1,core",
