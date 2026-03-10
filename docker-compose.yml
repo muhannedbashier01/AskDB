@@ -92,8 +92,8 @@ services:
         condition: service_healthy
     environment: &langfuse-env
       DATABASE_URL: postgresql://langfuse:langfuse@langfuse-postgres:5432/langfuse
-      SALT: ${LANGFUSE_SALT:-changeme-salt-at-least-32-chars!!!!}
-      ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY:-0000000000000000000000000000000000000000000000000000000000000000}
+      SALT: ${LANGFUSE_SALT}
+      ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY}
       TELEMETRY_ENABLED: "false"
       CLICKHOUSE_MIGRATION_URL: clickhouse://langfuse-clickhouse:9000
       CLICKHOUSE_URL: http://langfuse-clickhouse:8123
@@ -131,7 +131,7 @@ services:
     environment:
       <<: *langfuse-env
       NEXTAUTH_URL: http://localhost:3000
-      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-changeme-secret-at-least-32-chars!!}
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET}
       # Auto-initialize org, project and admin user for zero-config setup
       LANGFUSE_INIT_ORG_ID: askdb
       LANGFUSE_INIT_ORG_NAME: AskDB
@@ -139,8 +139,8 @@ services:
       LANGFUSE_INIT_PROJECT_NAME: AskDB Agent
       LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-pk-lf-askdb}
       LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-sk-lf-askdb}
-      LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_ADMIN_EMAIL:-admin@askdb.local}
-      LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_ADMIN_PASSWORD:-admin123}
+      LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_ADMIN_EMAIL}
+      LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_ADMIN_PASSWORD}
       LANGFUSE_INIT_USER_NAME: Admin
     networks:
       - askdb-network
