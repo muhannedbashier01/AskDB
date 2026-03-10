@@ -10,49 +10,50 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1.routes import router as v1_router
 from app.core.config import get_settings
 
-# Get settings for Seq configuration
-_settings = get_settings()
-
-# Configure seqlog to send logs to Seq server
-seqlog.log_to_seq(
-    server_url=_settings.seq_server_url,
-    api_key=_settings.seq_api_key or None,
-    level=logging.INFO,
-    batch_size=10,
-    auto_flush_timeout=2,
-    override_root_logger=True,
-)
-
-# Configure structlog to use standard logging (which seqlog hooks into)
-structlog.configure(
-    processors=[
-        structlog.contextvars.merge_contextvars,
-        structlog.processors.add_log_level,
-        structlog.processors.TimeStamper(fmt="iso"),
-        structlog.stdlib.add_logger_name,
-        structlog.stdlib.PositionalArgumentsFormatter(),
-        structlog.processors.StackInfoRenderer(),
-        structlog.processors.format_exc_info,
-        structlog.processors.UnicodeDecoder(),
-        structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
-    ],
-    wrapper_class=structlog.stdlib.BoundLogger,
-    context_class=dict,
-    logger_factory=structlog.stdlib.LoggerFactory(),
-    cache_logger_on_first_use=True,
-)
-
-# Also configure a formatter for the standard logging to output structured logs
-formatter = structlog.stdlib.ProcessorFormatter(
-    processor=structlog.dev.ConsoleRenderer(colors=True),
-)
-
-# Apply formatter to root logger handlers for console output
-for handler in logging.root.handlers:
-    if isinstance(handler, logging.StreamHandler):
-        handler.setFormatter(formatter)
-
 logger = structlog.get_logger()
+
+
+def _configure_logging() -> None:
+    """Set up Seq + structlog. Called once from create_app()."""
+    settings = get_settings()
+
+    try:
+        seqlog.log_to_seq(
+            server_url=settings.seq_server_url,
+            api_key=settings.seq_api_key or None,
+            level=logging.INFO,
+            batch_size=10,
+            auto_flush_timeout=2,
+            override_root_logger=True,
+        )
+    except Exception:
+        # Seq is optional — fall through to console-only logging
+        logging.warning("Seq logging unavailable, falling back to console", exc_info=True)
+
+    structlog.configure(
+        processors=[
+            structlog.contextvars.merge_contextvars,
+            structlog.processors.add_log_level,
+            structlog.processors.TimeStamper(fmt="iso"),
+            structlog.stdlib.add_logger_name,
+            structlog.stdlib.PositionalArgumentsFormatter(),
+            structlog.processors.StackInfoRenderer(),
+            structlog.processors.format_exc_info,
+            structlog.processors.UnicodeDecoder(),
+            structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
+        ],
+        wrapper_class=structlog.stdlib.BoundLogger,
+        context_class=dict,
+        logger_factory=structlog.stdlib.LoggerFactory(),
+        cache_logger_on_first_use=True,
+    )
+
+    formatter = structlog.stdlib.ProcessorFormatter(
+        processor=structlog.dev.ConsoleRenderer(colors=True),
+    )
+    for handler in logging.root.handlers:
+        if isinstance(handler, logging.StreamHandler):
+            handler.setFormatter(formatter)
 
 
 def create_app() -> FastAPI:
@@ -61,6 +62,7 @@ def create_app() -> FastAPI:
     Returns:
         Configured FastAPI application.
     """
+    _configure_logging()
     settings = get_settings()
 
     app = FastAPI(

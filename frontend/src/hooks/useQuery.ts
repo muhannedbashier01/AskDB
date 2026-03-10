@@ -57,9 +57,11 @@ export function useQuery() {
   }, []);
 
   const clearMessages = useCallback(() => {
-    // Clear session on backend
-    clearSession(sessionIdRef.current).catch(() => {});
-    // Generate new session for fresh conversation
+    // Clear session on backend — log failures but don't block the UI reset
+    clearSession(sessionIdRef.current).catch((err: unknown) => {
+      console.error('Failed to clear backend session:', err);
+    });
+    // Generate new session ID for the fresh conversation
     sessionIdRef.current = crypto.randomUUID();
     setMessages([]);
     setError(null);

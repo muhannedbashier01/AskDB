@@ -1,31 +1,21 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState } from 'react';
 import { useQuery } from '../hooks/useQuery';
+import { useAutoScroll } from '../hooks/useAutoScroll';
+import { ChatInput } from './ChatInput';
+import { ExampleSuggestions } from './ExampleSuggestions';
 import { MessageBubble } from './MessageBubble';
 
 export function ChatInterface() {
   const [input, setInput] = useState('');
-  const { messages, isLoading, sendQuery, clearMessages } = useQuery();
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  const { messages, isLoading, error, sendQuery, clearMessages } = useQuery();
+  const bottomRef = useAutoScroll([messages]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
-
     const query = input.trim();
     setInput('');
     await sendQuery(query);
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSubmit(e);
-    }
   };
 
   return (
@@ -48,35 +38,18 @@ export function ChatInterface() {
         </div>
       </header>
 
+      {/* Error banner — surfaces network/unexpected errors to the user */}
+      {error && (
+        <div className="bg-red-900/50 border-b border-red-700 px-6 py-2">
+          <p className="text-sm text-red-300 max-w-5xl mx-auto">{error}</p>
+        </div>
+      )}
+
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-6">
         <div className="max-w-5xl mx-auto space-y-4">
           {messages.length === 0 ? (
-            <div className="text-center py-12">
-              <div className="text-6xl mb-4">🗃️</div>
-              <h2 className="text-xl text-gray-300 mb-2">
-                Welcome to AskDB
-              </h2>
-              <p className="text-gray-500 max-w-md mx-auto">
-                Ask questions about your database in natural language. For example:
-              </p>
-              <div className="mt-4 space-y-2">
-                {[
-                  'Total policies purchased today',
-                  'Group today purchased Policies by insurance company',
-                  "List the total count of last week's purchased policies and the sum of PolicyAmount, PolicyAmountAfterSpecialDiscount",
-                  'How many new leasing contract this month',
-                ].map((example) => (
-                  <button
-                    key={example}
-                    onClick={() => setInput(example)}
-                    className="block mx-auto text-sm text-blue-400 hover:text-blue-300 transition-colors"
-                  >
-                    "{example}"
-                  </button>
-                ))}
-              </div>
-            </div>
+            <ExampleSuggestions onSelect={setInput} />
           ) : (
             messages.map((message) => (
               <MessageBubble key={message.id} message={message} />
@@ -98,37 +71,16 @@ export function ChatInterface() {
             </div>
           )}
 
-          <div ref={messagesEndRef} />
+          <div ref={bottomRef} />
         </div>
       </div>
 
-      {/* Input */}
-      <div className="border-t border-gray-700 bg-gray-800 px-4 py-4">
-        <form onSubmit={handleSubmit} className="max-w-5xl mx-auto">
-          <div className="flex gap-3">
-            <textarea
-              ref={inputRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Ask a question about your database..."
-              rows={1}
-              className="flex-1 bg-gray-900 text-white border border-gray-700 rounded-lg px-4 py-3 resize-none focus:outline-none focus:border-blue-500 transition-colors"
-              disabled={isLoading}
-            />
-            <button
-              type="submit"
-              disabled={!input.trim() || isLoading}
-              className="bg-blue-600 text-white px-6 py-3 rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-700 transition-colors"
-            >
-              {isLoading ? 'Sending...' : 'Send'}
-            </button>
-          </div>
-          <p className="text-xs text-gray-500 mt-2 text-center">
-            Press Enter to send, Shift+Enter for new line
-          </p>
-        </form>
-      </div>
+      <ChatInput
+        value={input}
+        onChange={setInput}
+        onSubmit={handleSubmit}
+        isLoading={isLoading}
+      />
     </div>
   );
 }

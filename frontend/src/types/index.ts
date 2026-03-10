@@ -11,13 +11,23 @@ export interface QueryResponse {
   session_id?: string | null;
 }
 
-export interface Message {
+interface BaseMessage {
   id: string;
-  type: 'user' | 'assistant';
-  content: string;
   timestamp: Date;
+}
+
+export interface UserMessage extends BaseMessage {
+  type: 'user';
+  content: string;
+}
+
+export interface AssistantMessage extends BaseMessage {
+  type: 'assistant';
+  content: string;
   response?: QueryResponse;
 }
+
+export type Message = UserMessage | AssistantMessage;
 
 export interface ColumnInfo {
   name: string;

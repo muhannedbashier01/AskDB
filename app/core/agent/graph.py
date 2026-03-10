@@ -14,11 +14,13 @@ from app.core.agent.nodes import (
     generate_sql,
     handle_error,
     route_after_execution,
+    summarize_response,
     validate_sql,
     route_after_validation,
 )
 from app.core.agent.state import AgentState, create_initial_state
 from app.core.prompts.sql_agent import CONVERSATION_CONTEXT_BLOCK
+from app.services.db_service import add_to_history
 from app.services.session_service import Exchange, get_session_service
 from app.services.tracing import get_tracing_service
 
@@ -118,13 +120,22 @@ def create_agent_graph() -> StateGraph:
         },
     ))
     graph.add_node("handle_error", handle_error)
-    graph.add_node("format_response", _traced_node(
-        format_response,
+    graph.add_node("summarize_response", _traced_node(
+        summarize_response,
         input_extractor=lambda s: {
             "row_count": (s.get("execution_result") or {}).get("row_count", 0),
         },
         output_extractor=lambda r, _s: {
-            "has_summary": r.get("final_response", {}).get("summary") is not None,
+            "has_summary": r.get("nl_summary") is not None,
+        },
+    ))
+    graph.add_node("format_response", _traced_node(
+        format_response,
+        input_extractor=lambda s: {
+            "row_count": (s.get("execution_result") or {}).get("row_count", 0),
+            "has_summary": s.get("nl_summary") is not None,
+        },
+        output_extractor=lambda r, _s: {
             "row_count": r.get("final_response", {}).get("row_count", 0),
         },
     ))
@@ -150,13 +161,14 @@ def create_agent_graph() -> StateGraph:
         "execute_sql",
         route_after_execution,
         {
-            "format_response": "format_response",
+            "format_response": "summarize_response",
             "handle_error": "handle_error",
             "format_error": "format_error",
         },
     )
 
     graph.add_edge("handle_error", "generate_sql")
+    graph.add_edge("summarize_response", "format_response")
     graph.add_edge("format_response", END)
     graph.add_edge("format_error", END)
 
@@ -246,14 +258,25 @@ def _finalize_agent_run(
     conversation_context: str,
     trace_id: str,
 ) -> dict[str, Any]:
-    """Update trace, save exchange, and return the response."""
+    """Persist history, update trace, save exchange, and return the response."""
     tracing = get_tracing_service()
+    response = final_state["final_response"]
+    success = response.get("success", False)
+
+    # Persist query history at the orchestration layer — not inside nodes
+    add_to_history(
+        user_query=final_state["user_query"],
+        sql_query=final_state["sql_query"],
+        success=success,
+        result=final_state.get("execution_result") if success else None,
+        error=response.get("error") if not success else None,
+    )
 
     tracing.update_trace(
-        output=final_state["final_response"],
+        output=response,
         metadata={
             "attempts": final_state["attempt_count"],
-            "success": final_state["final_response"].get("success", False),
+            "success": success,
             "session_id": session_id or "stateless",
             "has_context": bool(conversation_context),
         },
@@ -263,12 +286,11 @@ def _finalize_agent_run(
 
     logger.info(
         "Agent completed",
-        success=final_state["final_response"].get("success", False),
+        success=success,
         attempts=final_state["attempt_count"],
         trace_id=trace_id,
     )
 
-    response = final_state["final_response"]
     if session_id:
         response["session_id"] = session_id
     return response
@@ -277,6 +299,35 @@ def _finalize_agent_run(
 # ---------------------------------------------------------------------------
 # Public entry points
 # ---------------------------------------------------------------------------
+
+
+def _start_agent_run(
+    user_query: str,
+    session_id: str,
+    label: str = "Starting agent",
+) -> tuple[Any, AgentState, str, str, Any]:
+    """Shared setup for async and sync agent entry points.
+
+    Binds the trace ID to the structlog context, logs the start event,
+    and returns everything the caller needs to invoke the graph.
+
+    Returns:
+        (graph, initial_state, trace_id, conversation_context, tracing)
+    """
+    graph, initial_state, conversation_context = _prepare_agent_run(user_query, session_id)
+    trace_id = initial_state["trace_id"]
+    tracing = get_tracing_service()
+
+    structlog.contextvars.bind_contextvars(trace_id=trace_id)
+    logger.info(
+        label,
+        query=user_query[:50],
+        trace_id=trace_id,
+        session_id=session_id or "stateless",
+        has_context=bool(conversation_context),
+    )
+
+    return graph, initial_state, trace_id, conversation_context, tracing
 
 
 async def run_agent(user_query: str, session_id: str = "") -> dict[str, Any]:
@@ -289,17 +340,8 @@ async def run_agent(user_query: str, session_id: str = "") -> dict[str, Any]:
     Returns:
         Final response dictionary with query results or error.
     """
-    graph, initial_state, conversation_context = _prepare_agent_run(user_query, session_id)
-    trace_id = initial_state["trace_id"]
-    tracing = get_tracing_service()
-
-    structlog.contextvars.bind_contextvars(trace_id=trace_id)
-    logger.info(
-        "Starting agent",
-        query=user_query[:50],
-        trace_id=trace_id,
-        session_id=session_id or "stateless",
-        has_context=bool(conversation_context),
+    graph, initial_state, trace_id, conversation_context, tracing = _start_agent_run(
+        user_query, session_id
     )
 
     try:
@@ -320,16 +362,8 @@ def run_agent_sync(user_query: str, session_id: str = "") -> dict[str, Any]:
     Returns:
         Final response dictionary with query results or error.
     """
-    graph, initial_state, conversation_context = _prepare_agent_run(user_query, session_id)
-    trace_id = initial_state["trace_id"]
-    tracing = get_tracing_service()
-
-    structlog.contextvars.bind_contextvars(trace_id=trace_id)
-    logger.info(
-        "Starting agent (sync)",
-        query=user_query[:50],
-        trace_id=trace_id,
-        session_id=session_id or "stateless",
+    graph, initial_state, trace_id, conversation_context, tracing = _start_agent_run(
+        user_query, session_id, label="Starting agent (sync)"
     )
 
     try:

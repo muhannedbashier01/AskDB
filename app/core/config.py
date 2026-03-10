@@ -1,26 +1,9 @@
 """Application configuration using Pydantic Settings."""
 
 from functools import lru_cache
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
-
-# Policies Schema Configuration
-POLICIES_TABLES = [
-    # Core Aggregate
-    "PurchasedPolicyDetail",
-    # Related Tables
-    "PurchasedPolicyInfo",
-    "PurchasedPolicyVehicleInformation",
-    "LeasingPurchaseTracking",
-    "LeasingContract",
-    # Lookup Tables
-    "VehiclePlateTypeMaster",
-    "VehicleColorMaster",
-    "VehicleMakeMaster",
-    "VehicleModelMaster",
-    "InsuranceCompany",
-]
 
 
 class Settings(BaseSettings):
@@ -33,7 +16,7 @@ class Settings(BaseSettings):
     )
 
     # LLM Configuration
-    llm_provider: str = "openai"  # "openai" (covers LM Studio, OpenAI, etc.), "anthropic", "google"
+    llm_provider: Literal["openai", "anthropic", "google"] = "openai"
     llm_base_url: str = "http://localhost:1234/v1"
     llm_model: str = "local-model"
     llm_temperature: float = 0.0
@@ -69,6 +52,9 @@ class Settings(BaseSettings):
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""
     langfuse_base_url: str = "http://localhost:3000"
+    # Max characters stored in Langfuse for prompt/response payloads
+    langfuse_prompt_truncate_limit: int = 500
+    langfuse_response_truncate_limit: int = 1000
 
     @property
     def cors_origins_list(self) -> list[str]:

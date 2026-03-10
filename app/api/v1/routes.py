@@ -1,7 +1,7 @@
 """API routes for the SQL agent."""
 
 import structlog
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
 from app.api.v1.schemas import (
     HealthResponse,
@@ -36,10 +36,10 @@ async def submit_query(request: QueryRequest) -> QueryResponse:
         result = await run_agent(request.query, session_id=request.session_id or "")
         return QueryResponse(**result)
     except Exception as e:
-        logger.exception("Query processing failed")
+        logger.exception("Query processing failed", error=str(e))
         raise HTTPException(
             status_code=500,
-            detail=f"Query processing failed: {str(e)}",
+            detail="An error occurred while processing your query. Please try again.",
         ) from e
 
 
@@ -57,15 +57,15 @@ async def get_schema() -> SchemaResponse:
         schema_dict = db.get_schema_dict()
         return SchemaResponse(**schema_dict)
     except Exception as e:
-        logger.exception("Failed to fetch schema")
+        logger.exception("Failed to fetch schema", error=str(e))
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to fetch schema: {str(e)}",
+            detail="Failed to fetch database schema. Please try again.",
         ) from e
 
 
 @router.get("/history", response_model=HistoryResponse)
-async def get_query_history(limit: int = 50) -> HistoryResponse:
+async def get_query_history(limit: int = Query(default=50, ge=1, le=1000)) -> HistoryResponse:
     """Get query history.
 
     Args:

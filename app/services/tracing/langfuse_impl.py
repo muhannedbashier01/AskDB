@@ -21,13 +21,6 @@ from app.core.config import get_settings
 logger = structlog.get_logger()
 
 # ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
-PROMPT_TRUNCATE_LIMIT = 500
-RESPONSE_TRUNCATE_LIMIT = 1000
-
-# ---------------------------------------------------------------------------
 # Context variables — propagate trace/span across the async call stack
 # ---------------------------------------------------------------------------
 
@@ -180,17 +173,21 @@ class LangfuseTracingService:
             return
 
         try:
+            settings = get_settings()
+            prompt_limit = settings.langfuse_prompt_truncate_limit
+            response_limit = settings.langfuse_response_truncate_limit
+
             truncated_input = None
             if prompt_messages and isinstance(prompt_messages, list):
                 truncated_input = [
-                    {"role": m.get("role", ""), "content": str(m.get("content", ""))[:PROMPT_TRUNCATE_LIMIT]}
+                    {"role": m.get("role", ""), "content": str(m.get("content", ""))[:prompt_limit]}
                     for m in prompt_messages
                 ]
             elif prompt_messages is not None:
                 truncated_input = prompt_messages
 
             truncated_output = (
-                response_text[:RESPONSE_TRUNCATE_LIMIT]
+                response_text[:response_limit]
                 if isinstance(response_text, str)
                 else response_text
             )

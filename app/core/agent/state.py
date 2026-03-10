@@ -31,6 +31,7 @@ class AgentState(TypedDict):
     reasoning: str
     conversation_context: str
     execution_result: Any
+    nl_summary: str | None
     error_message: str
     error_type: str
     attempt_count: int
@@ -61,6 +62,7 @@ def create_initial_state(
         reasoning="",
         conversation_context=conversation_context,
         execution_result=None,
+        nl_summary=None,
         error_message="",
         error_type="",
         attempt_count=0,

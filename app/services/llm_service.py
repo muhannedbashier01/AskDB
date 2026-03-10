@@ -261,7 +261,7 @@ class LLMService:
         """
         cleaned = raw.strip()
 
-        # Try JSON parse first
+        # Attempt 1: direct JSON parse
         try:
             parsed = json.loads(cleaned)
             if isinstance(parsed, dict) and "sql" in parsed:
@@ -269,10 +269,10 @@ class LLMService:
                     "sql": parsed["sql"].strip(),
                     "reasoning": parsed.get("reasoning", ""),
                 }
-        except (json.JSONDecodeError, TypeError, AttributeError):
-            pass
+        except (json.JSONDecodeError, TypeError, AttributeError) as exc:
+            logger.debug("Direct JSON parse failed, trying markdown block", error=str(exc))
 
-        # Try extracting JSON from markdown code blocks (```json ... ```)
+        # Attempt 2: extract JSON from ```json ... ``` markdown block
         try:
             if "```json" in cleaned:
                 json_block = cleaned.split("```json", 1)[1].split("```", 1)[0]
@@ -282,11 +282,11 @@ class LLMService:
                         "sql": parsed["sql"].strip(),
                         "reasoning": parsed.get("reasoning", ""),
                     }
-        except (json.JSONDecodeError, TypeError, AttributeError, IndexError):
-            pass
+        except (json.JSONDecodeError, TypeError, AttributeError, IndexError) as exc:
+            logger.debug("Markdown JSON block parse failed, falling back to raw SQL", error=str(exc))
 
-        # Fallback: treat entire response as raw SQL
-        logger.warning("Failed to parse structured SQL output, falling back to raw SQL")
+        # Attempt 3: treat entire response as raw SQL (last resort)
+        logger.warning("All structured parse attempts failed — using raw SQL fallback")
         return {
             "sql": self._clean_sql(cleaned),
             "reasoning": "",
